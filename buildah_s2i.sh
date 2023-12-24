@@ -70,7 +70,9 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
     while IFS="" read -r line
     do
       [[ "$line" =~ ^#.*$ ]] && continue
-      ENV+="-e $line "
+      KEY=$(echo $line|cut -d "=" -f 1)
+      VALUE=$(echo $line|cut -d "=" -f 2)
+      ENV+="-e $KEY=\"$VALUE\" "
     done < $CONTEXT_DIR/.s2i/environment
 
     if ! [ -z "$ENV" ]
