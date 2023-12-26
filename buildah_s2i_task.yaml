@@ -1,0 +1,233 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: buildah-s2i
+  labels:
+    app.kubernetes.io/version: '0.1'
+spec:
+  description: >-
+    buildah-s2i task builds and pushes a container
+    image using S2I and a provided builder image.
+  params:
+    - default: .
+      description: The location of the path to run s2i from
+      name: PATH_CONTEXT
+      type: string
+    - default: 'true'
+      description: >-
+        Verify the TLS on the registry endpoint (for push/pull to a non-TLS
+        registry)
+      name: TLSVERIFY
+      type: string
+    - description: Location of the repo where image has to be pushed
+      name: OUTPUT_IMAGE
+      type: string
+    - default: 'quay.io/buildah/stable:latest'
+      description: The location of the buildah builder image.
+      name: BUILDAH_IMAGE
+      type: string
+    - default: 'false'
+      description: Skip pushing the built image
+      name: SKIP_PUSH
+      type: string
+    - description: Builder Image
+      name: BUILDER_IMAGE
+      type: string
+    - default: 'false'
+      description: Incremental build
+      name: INCREMENTAL
+      type: string
+    - default: "env"
+      description: Name of key of configmap
+      type: string
+      name: ENVKEY
+  results:
+    - description: Digest of the image just built.
+      name: IMAGE_DIGEST
+      type: string
+  steps:
+    - image: $(params.BUILDAH_IMAGE)
+      name: build-and-push
+      resources: {}
+      script: |
+        #!/usr/bin/env bash
+
+        set -eu -o pipefail
+
+        BUILDER_IMAGE=$(params.BUILDER_IMAGE)
+        OUTPUT_IMAGE=$(params.OUTPUT_IMAGE)
+        INCREMENTAL=$(params.INCREMENTAL)
+        RUNTIME_IMAGE=${RUNTIME_IMAGE:-""}
+        RUNTIME_CMD=${RUNTIME_CMD:-""}
+        CONTEXT_DIR=$(params.PATH_CONTEXT)
+
+        echo "Start build process with builder image $BUILDER_IMAGE"
+
+        buildah --storage-driver=vfs pull --tls-verify=$(params.TLSVERIFY) $BUILDER_IMAGE
+
+        SCRIPTS_URL=$(buildah --storage-driver=vfs inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $BUILDER_IMAGE)
+        DESTINATION_URL=$(buildah --storage-driver=vfs inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
+        ASSEMBLE_USER=$(buildah --storage-driver=vfs inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $BUILDER_IMAGE)
+
+        if [ -z "$SCRIPTS_URL" ] || [ -z "$DESTINATION_URL" ]
+        then
+          echo "Image not compatible with S2I. Terminating"
+          exit -1
+        else
+          SCRIPTS_URL=$(echo -n "$SCRIPTS_URL" | sed 's/image:\/\///g' | tr -d '"')
+          DESTINATION_URL=$(echo -n "$DESTINATION_URL" | tr -d '"')
+
+          if [ -z "$ASSEMBLE_USER" ]
+          then
+            ASSEMBLE_USER=$(buildah --storage-driver=vfs inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
+          fi
+
+          ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
+
+        fi
+
+        builder=$(buildah --storage-driver=vfs from --tls-verify=$(params.TLSVERIFY) $BUILDER_IMAGE)
+
+        echo "Copy from $(workspaces.source.path)/$CONTEXT_DIR to $DESTINATION_URL/src"
+        buildah --storage-driver=vfs add --chown $ASSEMBLE_USER:0 $builder $(workspaces.source.path)/$CONTEXT_DIR $DESTINATION_URL/src
+
+        # If incremental build is enabled and there is an artifacts.tar file, then
+        # copy it to the builder image
+        if [ "$INCREMENTAL" = "true" ]; then
+
+            if [ -f "$(workspaces.artifacts.path)/artifacts.tar" ]; then
+                echo "Restoring artifacts for incremental build"
+                buildah --storage-driver=vfs add --chown $ASSEMBLE_USER:0 $builder $(workspaces.artifacts.path)/artifacts.tar $DESTINATION_URL/artifacts
+            fi
+
+        fi
+
+        # Construct enviroment variables to be used during the assemble script
+        ENV=""
+        if [ -f "$(workspaces.source.path)/$CONTEXT_DIR/.s2i/environment" ]; then
+            echo "Using $(workspaces.source.path)/$CONTEXT_DIR/.s2i/environment"
+
+            while IFS="" read -r line
+            do
+              [[ "$line" =~ ^#.*$ ]] && continue
+              KEY=$(echo $line|cut -d "=" -f 1)
+              VALUE=$(echo $line|cut -d "=" -f 2)
+              ENV+="-e $KEY=\"$VALUE\" "
+            done < $(workspaces.source.path)/$CONTEXT_DIR/.s2i/environment
+        fi
+
+        if [ -f "$(workspaces.environment.path)/$(params.ENVKEY)" ]; then
+            echo "Using $(workspaces.environment.path)/$(params.ENVKEY)."
+
+            while IFS="" read -r line
+            do
+              [[ "$line" =~ ^#.*$ ]] && continue
+              KEY=$(echo $line|cut -d "=" -f 1)
+              VALUE=$(echo $line|cut -d "=" -f 2)
+              ENV+="-e $KEY=\"$VALUE\" "
+            done < $(workspaces.environment.path)/$(params.ENVKEY)
+        fi
+
+        if [ -f "$(workspaces.secureenvironment.path)/$(params.ENVKEY)" ]; then
+            echo "Using $(workspaces.secureenvironment.path)/$(params.ENVKEY)."
+
+            while IFS="" read -r line
+            do
+              [[ "$line" =~ ^#.*$ ]] && continue
+              KEY=$(echo $line|cut -d "=" -f 1)
+              VALUE=$(echo $line|cut -d "=" -f 2)
+              ENV+="-e $KEY=\"$VALUE\" "
+            done < $(workspaces.secureenvironment.path)/$(params.ENVKEY)
+        fi
+
+        # Set run script as CMD
+        buildah --storage-driver=vfs config --cmd $SCRIPTS_URL/run $builder
+
+        # Run assemble script. If there is an assemble script in .s2i/bin directory
+        # it takes precedence
+        ASSEMBLE_SCRIPT="$SCRIPTS_URL/assemble"
+
+        if [ -x "$(workspaces.source.path)/$CONTEXT_DIR/.s2i/bin/assemble" ]; then
+
+            echo "Replacing assemble file from .s2i/bin"
+            ASSEMBLE_SCRIPT="$DESTINATION_URL/src/.s2i/bin/assemble"
+        fi
+
+        eval buildah --storage-driver=vfs run $ENV $builder -- $ASSEMBLE_SCRIPT
+
+        # If incremental build is enabled, and image provide save-artifacts script,
+        # then call it and backup artifacts
+        if [ "$INCREMENTAL" = "true" ]; then
+
+            echo "Saving artifacts"
+            if [ -f "$(workspaces.artifacts.path)/artifacts.tar" ]; then
+                rm $(workspaces.artifacts.path)/artifacts.tar
+            fi
+
+            buildah --storage-driver=vfs run $builder -- /bin/bash -c "if [ -x \"$SCRIPTS_URL/save-artifacts\" ]; then $SCRIPTS_URL/save-artifacts ; fi" > $(workspaces.artifacts.path)/artifacts.tar
+
+        fi
+
+        # RUNTIME IMAGE BUILD
+        if [ ! -z "$RUNTIME_IMAGE" ]; then
+
+            if [ -z "$RUNTIME_ARTIFACT" ] || [ -z "$RUNTIME_DEST_ARTIFACT" ]; then
+
+              echo "Can't create runtime image. Missing requirements"
+              exit -1
+
+            fi
+
+            echo "Creating Runtime Image"
+
+            runner=$(buildah from $RUNTIME_IMAGE)
+
+            buildah copy --chown $ASSEMBLE_USER:0 --from $builder $runner $RUNTIME_ARTIFACT $RUNTIME_DEST_ARTIFACT
+
+            if [ ! -z "$RUNTIME_CMD" ]; then
+              buildah config --cmd $RUNTIME_CMD $runner
+            fi
+
+            buildah commit $runner $OUTPUT_IMAGE
+
+            buildah rm $runner
+
+        else
+
+            buildah --storage-driver=vfs commit $builder $OUTPUT_IMAGE
+
+        fi
+
+        buildah --storage-driver=vfs rm $builder
+
+        [[ "$(params.SKIP_PUSH)" == "true" ]] && echo "Push skipped" && exit 0
+
+        [[ "$(workspaces.dockerconfig.bound)" == "true" ]] && export
+        DOCKER_CONFIG="$(workspaces.dockerconfig.path)"
+
+        buildah push --storage-driver=vfs --tls-verify=$(params.TLSVERIFY) \
+          --digestfile $(workspaces.source.path)/image-digest $(params.OUTPUT_IMAGE) \
+          docker://$(params.OUTPUT_IMAGE)
+
+        cat $(workspaces.source.path)/image-digest | tee $(results.IMAGE_DIGEST.path)
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      volumeMounts:
+        - mountPath: /var/lib/containers
+          name: varlibcontainers
+  volumes:
+    - emptyDir: {}
+      name: varlibcontainers
+  workspaces:
+    - name: source
+    - name: environment
+    - name: secureenvironment
+    - name: artifacts
+    - description: >-
+        An optional workspace that allows providing a .docker/config.json file
+        for Buildah to access the container registry. The file should be placed
+        at the root of the Workspace with name config.json.
+      name: dockerconfig
+      optional: true
