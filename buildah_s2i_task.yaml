@@ -42,6 +42,9 @@ spec:
       type: string
       name: ENVKEY
   results:
+    - description: Url of the image just built.
+      name: IMAGE_URL
+      type: string
     - description: Digest of the image just built.
       name: IMAGE_DIGEST
       type: string
@@ -210,6 +213,7 @@ spec:
           docker://$(params.OUTPUT_IMAGE)
 
         cat $(workspaces.source.path)/image-digest | tee $(results.IMAGE_DIGEST.path)
+        echo -n $(params.OUTPUT_IMAGE) | tee $(results.IMAGE_URL.path)
       securityContext:
         capabilities:
           add:
