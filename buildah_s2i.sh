@@ -23,8 +23,12 @@ INCREMENTAL=${INCREMENTAL:-false}
 RUNTIME_IMAGE=${RUNTIME_IMAGE:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
 CONTEXT_DIR=${CONTEXT_DIR:-"."}
+TLSVERIFY=${TLSVERITY:-"true"}
+BUILDAH_PARAMS=${BUILDAH_PARAMS:-"--storage-driver=vfs"}
 
 echo "Start build process with builder image $BUILDER_IMAGE"
+
+buildah  $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $BUILDER_IMAGE
 
 SCRIPTS_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $BUILDER_IMAGE)
 DESTINATION_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
@@ -47,10 +51,10 @@ else
 
 fi
 
-builder=$(buildah from --ulimit nofile=90000:90000 $BUILDER_IMAGE)
+builder=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $BUILDER_IMAGE)
 
 echo "Copy from ./$CONTEXT_DIR to $DESTINATION_URL/src"
-buildah add --chown $ASSEMBLE_USER:0 $builder ./$CONTEXT_DIR $DESTINATION_URL/src
+buildah $BUILDAH_PARAMS add --chown $ASSEMBLE_USER:0 $builder ./$CONTEXT_DIR $DESTINATION_URL/src
 
 # If incremental build is enabled and there is an artifacts.tar file, then
 # copy it to the builder image
@@ -58,7 +62,7 @@ if [ "$INCREMENTAL" = "true" ]; then
 
     if [ -f "./artifacts.tar" ]; then
         echo "Restoring artifacts for incremental build"
-        buildah add --chown $ASSEMBLE_USER:0 $builder ./artifacts.tar $DESTINATION_URL/artifacts
+        buildah $BUILDAH_PARAMS add --chown $ASSEMBLE_USER:0 $builder ./artifacts.tar $DESTINATION_URL/artifacts
     fi
 
 fi
@@ -82,7 +86,7 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
 fi
 
 # Set run script as CMD
-buildah config --cmd $SCRIPTS_URL/run $builder
+buildah $BUILDAH_PARAMS config --cmd $SCRIPTS_URL/run $builder
 
 # Run assemble script. If there is an assemble script in .s2i/bin directory
 # it takes precedence
@@ -94,7 +98,7 @@ if [ -x "$CONTEXT_DIR/.s2i/bin/assemble" ]; then
     ASSEMBLE_SCRIPT="$DESTINATION_URL/src/.s2i/bin/assemble"
 fi
 
-eval buildah run $ENV $builder -- $ASSEMBLE_SCRIPT
+eval buildah $BUILDAH_PARAMS run $ENV $builder -- $ASSEMBLE_SCRIPT
 
 # If incremental build is enabled, and image provide save-artifacts script,
 # then call it and backup artifacts
@@ -105,7 +109,7 @@ if [ "$INCREMENTAL" = "true" ]; then
         rm ./artifacts.tar
     fi
 
-    buildah run $builder -- /bin/bash -c "if [ -x \"$SCRIPTS_URL/save-artifacts\" ]; then $SCRIPTS_URL/save-artifacts ; fi" > ./artifacts.tar
+    buildah $BUILDAH_PARAMS run $builder -- /bin/bash -c "if [ -x \"$SCRIPTS_URL/save-artifacts\" ]; then $SCRIPTS_URL/save-artifacts ; fi" > ./artifacts.tar
 
 fi
 
@@ -135,8 +139,8 @@ if [ ! -z "$RUNTIME_IMAGE" ]; then
 
 else
 
-    buildah commit $builder $OUTPUT_IMAGE
+    buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
 
 fi
 
-buildah rm $builder
+buildah $BUILDAH_PARAMS rm $builder
