@@ -3,9 +3,9 @@
 # This script emulates an S2I (https://github.com/openshift/source-to-image)
 # build process performed via buildah.
 #
-# It is able to perform incremental builds and use builder and runtime images.
+# It is able to perform incremental builds.
 #
-# Version 0.0.6
+# Version 0.0.7
 #
 # Copyright 2023 Giuseppe Magnotta giuseppe.magnotta@gmail.com
 #
@@ -13,14 +13,12 @@
 # BUILDER_IMAGE -> The builder image to use
 # OUTPUT_IMAGE -> The image that will be build
 # INCREMENTAL -> If incremental build should be used
-# RUNTIME_IMAGE -> The runtime image to use
 # RUNTIME_CMD -> The CMD that will override the one in RUNTIME_IMAGE
 set -e
 
 BUILDER_IMAGE=${BUILDER_IMAGE:-""}
 OUTPUT_IMAGE=${OUTPUT_IMAGE:-""}
 INCREMENTAL=${INCREMENTAL:-false}
-RUNTIME_IMAGE=${RUNTIME_IMAGE:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
 CONTEXT_DIR=${CONTEXT_DIR:-"."}
 TLSVERIFY=${TLSVERITY:-"true"}
@@ -75,7 +73,8 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
     do
       [[ "$line" =~ ^#.*$ ]] && continue
       KEY=$(echo $line|cut -d "=" -f 1)
-      VALUE=$(echo $line|cut -d "=" -f 2)
+      LEN=${#KEY}
+      VALUE=${line:$LEN+1}
       ENV+="-e $KEY=\"$VALUE\" "
     done < $CONTEXT_DIR/.s2i/environment
 
@@ -113,36 +112,13 @@ if [ "$INCREMENTAL" = "true" ]; then
 
 fi
 
-# RUNTIME IMAGE BUILD
-if [ ! -z "$RUNTIME_IMAGE" ]; then
+# Clearing artifacts and src directory
+buildah $BUILDAH_PARAMS run $builder -- /bin/bash -c "if [ -d \"$DESTINATION_URL/artifacts\" ]; then echo 'Cleaning up artifacts directory ($DESTINATION_URL/artifacts)' ;  rm -rf $DESTINATION_URL/artifacts ; fi"
+buildah $BUILDAH_PARAMS run $builder -- /bin/bash -c "if [ -d \"$DESTINATION_URL/src\" ]; then echo 'Cleaning up source directory ($DESTINATION_URL/src)' ;  rm -rf $DESTINATION_URL/src ; fi"
 
-    if [ -z "$RUNTIME_ARTIFACT" ] || [ -z "$RUNTIME_DEST_ARTIFACT" ]; then
+echo "Committing image"
+buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
 
-      echo "Can't create runtime image. Missing requirements"
-      exit -1
-
-    fi
-
-    echo "Creating Runtime Image"
-
-    runner=$(buildah from $RUNTIME_IMAGE)
-
-    buildah copy --chown $ASSEMBLE_USER:0 --from $builder $runner $RUNTIME_ARTIFACT $RUNTIME_DEST_ARTIFACT
-
-    if [ ! -z "$RUNTIME_CMD" ]; then
-      buildah config --cmd $RUNTIME_CMD $runner
-    fi
-
-    buildah commit $runner $OUTPUT_IMAGE
-
-    buildah rm $runner
-
-else
-
-    echo "Committing image"
-    buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
-
-fi
 
 echo "Deleting temporary images"
 buildah $BUILDAH_PARAMS rm $builder
