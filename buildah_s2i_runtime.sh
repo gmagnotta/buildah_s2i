@@ -49,7 +49,7 @@ then
   S2I="false"
   echo "Image not compatible with S2I. Copy raw data"
   CMD="$RUNTIME_CMD"
-  echo "$CMD"
+  #echo "$CMD"
 else
   S2I="true"
 
@@ -58,7 +58,7 @@ else
   DESTINATION_URL="$DESTINATION_URL/src"
   CMD="$SCRIPTS_URL/run"
 
-  echo "$SCRIPTS_URL $DESTINATION_URL $CMD"
+  #echo "$SCRIPTS_URL $DESTINATION_URL $CMD"
 fi
 
 runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $BUILDER_IMAGE)
