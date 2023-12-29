@@ -112,9 +112,6 @@ if [ "$INCREMENTAL" = "true" ]; then
 
 fi
 
-# Clearing artifacts and src directory
-buildah $BUILDAH_PARAMS run $builder -- /bin/bash -c "if [ -d \"$DESTINATION_URL/artifacts\" ]; then echo 'Cleaning up artifacts directory ($DESTINATION_URL/artifacts)' ;  rm -rf $DESTINATION_URL/artifacts ; fi"
-buildah $BUILDAH_PARAMS run $builder -- /bin/bash -c "if [ -d \"$DESTINATION_URL/src\" ]; then echo 'Cleaning up source directory ($DESTINATION_URL/src)' ;  rm -rf $DESTINATION_URL/src ; fi"
 
 echo "Committing image"
 buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
