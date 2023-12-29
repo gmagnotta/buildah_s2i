@@ -24,11 +24,11 @@ RUNTIME_IMAGE=${RUNTIME_IMAGE:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
 CONTEXT_DIR=${CONTEXT_DIR:-"."}
 TLSVERIFY=${TLSVERITY:-"true"}
-BUILDAH_PARAMS=${BUILDAH_PARAMS:-"--storage-driver=vfs"}
+BUILDAH_PARAMS=${BUILDAH_PARAMS:-""}
 
 echo "Start build process with builder image $BUILDER_IMAGE"
 
-buildah  $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $BUILDER_IMAGE
+buildah $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $BUILDER_IMAGE
 
 SCRIPTS_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $BUILDER_IMAGE)
 DESTINATION_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
@@ -139,8 +139,10 @@ if [ ! -z "$RUNTIME_IMAGE" ]; then
 
 else
 
+    echo "Committing image"
     buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
 
 fi
 
+echo "Deleting temporary images"
 buildah $BUILDAH_PARAMS rm $builder
