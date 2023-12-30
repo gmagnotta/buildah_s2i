@@ -13,13 +13,11 @@
 # BUILDER_IMAGE -> The builder image to use
 # OUTPUT_IMAGE -> The image that will be build
 # INCREMENTAL -> If incremental build should be used
-# RUNTIME_CMD -> The CMD that will override the one in RUNTIME_IMAGE
-set -e
+set -e -o pipefail
 
 BUILDER_IMAGE=${BUILDER_IMAGE:-""}
 OUTPUT_IMAGE=${OUTPUT_IMAGE:-""}
 INCREMENTAL=${INCREMENTAL:-false}
-RUNTIME_CMD=${RUNTIME_CMD:-""}
 CONTEXT_DIR=${CONTEXT_DIR:-"."}
 TLSVERIFY=${TLSVERITY:-"true"}
 BUILDAH_PARAMS=${BUILDAH_PARAMS:-""}
@@ -28,9 +26,9 @@ echo "Start build process with builder image $BUILDER_IMAGE"
 
 buildah $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $BUILDER_IMAGE
 
-SCRIPTS_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $BUILDER_IMAGE)
-DESTINATION_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
-ASSEMBLE_USER=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $BUILDER_IMAGE)
+SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $BUILDER_IMAGE)
+DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
+ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $BUILDER_IMAGE)
 
 if [ -z "$SCRIPTS_URL" ] || [ -z "$DESTINATION_URL" ]
 then
@@ -68,6 +66,7 @@ fi
 # Construct enviroment variables to be used during the assemble script
 ENV=""
 if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
+    echo "Using $CONTEXT_DIR/.s2i/environment"
 
     while IFS="" read -r line
     do
@@ -113,7 +112,7 @@ if [ "$INCREMENTAL" = "true" ]; then
 fi
 
 
-echo "Committing image"
+echo "Committing image $OUTPUT_IMAGE"
 buildah $BUILDAH_PARAMS commit $builder $OUTPUT_IMAGE
 
 
