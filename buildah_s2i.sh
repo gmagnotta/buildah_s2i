@@ -40,7 +40,7 @@ else
 
   if [ -z "$ASSEMBLE_USER" ]
   then
-    ASSEMBLE_USER=$(buildah inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
+    ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
   fi
 
   ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
