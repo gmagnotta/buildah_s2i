@@ -13,7 +13,7 @@
 # BUILDER_IMAGE -> The builder image to use
 # OUTPUT_IMAGE -> The image that will be build
 # INCREMENTAL -> If incremental build should be used
-set -e -o pipefail
+set -eu -o pipefail
 
 BUILDER_IMAGE=${BUILDER_IMAGE:-""}
 OUTPUT_IMAGE=${OUTPUT_IMAGE:-""}
@@ -71,10 +71,11 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
     while IFS="" read -r line
     do
       [[ "$line" =~ ^#.*$ ]] && continue
-      KEY=$(echo $line|cut -d "=" -f 1)
-      LEN=${#KEY}
-      VALUE=${line:$LEN+1}
-      ENV+="-e $KEY=\"$VALUE\" "
+
+        KEY=$(echo $line|cut -d "=" -f 1)
+        LEN=${#KEY}
+        VALUE=${line:$LEN+1}
+        ENV+="-e $KEY='$VALUE' "
     done < $CONTEXT_DIR/.s2i/environment
 
     #if ! [ -z "$ENV" ]
@@ -96,6 +97,7 @@ if [ -x "$CONTEXT_DIR/.s2i/bin/assemble" ]; then
     ASSEMBLE_SCRIPT="$DESTINATION_URL/src/.s2i/bin/assemble"
 fi
 
+echo "Running assemble $ASSEMBLE_SCRIPT"
 eval buildah $BUILDAH_PARAMS run $ENV $builder -- $ASSEMBLE_SCRIPT
 
 # If incremental build is enabled, and image provide save-artifacts script,

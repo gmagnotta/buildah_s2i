@@ -120,7 +120,7 @@ spec:
               KEY=$(echo $line|cut -d "=" -f 1)
               LEN=${#KEY}
               VALUE=${line:$LEN+1}
-              ENV+="-e $KEY=\"$VALUE\" "
+              ENV+="-e $KEY='$VALUE' "
             done < $(workspaces.source.path)/$CONTEXT_DIR/.s2i/environment
         fi
 
@@ -133,7 +133,7 @@ spec:
               KEY=$(echo $line|cut -d "=" -f 1)
               LEN=${#KEY}
               VALUE=${line:$LEN+1}
-              ENV+="-e $KEY=\"$VALUE\" "
+              ENV+="-e $KEY='$VALUE' "
             done < $(workspaces.environment.path)/$(params.ENVKEY)
         fi
 
@@ -146,7 +146,7 @@ spec:
               KEY=$(echo $line|cut -d "=" -f 1)
               LEN=${#KEY}
               VALUE=${line:$LEN+1}
-              ENV+="-e $KEY=\"$VALUE\" "
+              ENV+="-e $KEY='$VALUE' "
             done < $(workspaces.secureenvironment.path)/$(params.ENVKEY)
         fi
 
@@ -163,6 +163,7 @@ spec:
             ASSEMBLE_SCRIPT="$DESTINATION_URL/src/.s2i/bin/assemble"
         fi
 
+        echo "Running assemble $ASSEMBLE_SCRIPT"
         eval buildah $BUILDAH_PARAMS run $ENV $builder -- $ASSEMBLE_SCRIPT
 
         # If incremental build is enabled, and image provide save-artifacts script,
