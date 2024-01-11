@@ -30,11 +30,16 @@ SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "
 DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
 ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $BUILDER_IMAGE)
 
-if [ -z "$SCRIPTS_URL" ] || [ -z "$DESTINATION_URL" ]
+if [ -z "$SCRIPTS_URL" ]
 then
   echo "Image not compatible with S2I. Terminating"
   exit -1
 else
+  if [ -z "$DESTINATION_URL" ]
+  then
+    echo "WARNING: Image not defining DESTINATION URL. Assuming /tmp"
+    DESTINATION_URL=/tmp
+  fi  
   SCRIPTS_URL=$(echo -n "$SCRIPTS_URL" | sed 's/image:\/\///g' | tr -d '"')
   DESTINATION_URL=$(echo -n "$DESTINATION_URL" | tr -d '"')
 
