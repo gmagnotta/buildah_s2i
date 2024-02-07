@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
 # This script emulates an S2I (https://github.com/openshift/source-to-image)
-# build process performed via buildah.
+# build process performed only via buildah.
 #
 # It is able to perform incremental builds.
 #
-# Version 0.0.7
+# Version 0.0.8
 #
-# Copyright 2023 Giuseppe Magnotta giuseppe.magnotta@gmail.com
+# Copyright 2023, 2024 Giuseppe Magnotta giuseppe.magnotta@gmail.com
 #
 # Expected environment variables:
 # BUILDER_IMAGE -> The builder image to use
@@ -37,20 +37,27 @@ then
 else
   if [ -z "$DESTINATION_URL" ]
   then
-    echo "WARNING: Image not defining DESTINATION URL. Assuming /tmp"
+    echo "WARNING: Image is not defining DESTINATION URL. Assuming /tmp"
     DESTINATION_URL=/tmp
-  fi  
+  fi
   SCRIPTS_URL=$(echo -n "$SCRIPTS_URL" | sed 's/image:\/\///g' | tr -d '"')
   DESTINATION_URL=$(echo -n "$DESTINATION_URL" | tr -d '"')
 
+fi
+
+if [ -z "$ASSEMBLE_USER" ]
+then
+  ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
+
   if [ -z "$ASSEMBLE_USER" ]
   then
-    ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
+    echo "Unable to determine the USER to build container. Terminating"
+    exit -1
   fi
 
-  ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
-
 fi
+
+ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 
 builder=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $BUILDER_IMAGE)
 
@@ -90,6 +97,7 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
 fi
 
 # Set run script as CMD
+echo "Setting CMD $SCRIPTS_URL/run"
 buildah $BUILDAH_PARAMS config --cmd $SCRIPTS_URL/run $builder
 
 # Run assemble script. If there is an assemble script in .s2i/bin directory

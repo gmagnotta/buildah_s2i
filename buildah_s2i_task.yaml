@@ -76,22 +76,33 @@ spec:
         DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $BUILDER_IMAGE)
         ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $BUILDER_IMAGE)
 
-        if [ -z "$SCRIPTS_URL" ] || [ -z "$DESTINATION_URL" ]
+        if [ -z "$SCRIPTS_URL" ]
         then
           echo "Image not compatible with S2I. Terminating"
           exit -1
         else
+          if [ -z "$DESTINATION_URL" ]
+          then
+            echo "WARNING: Image is not defining DESTINATION URL. Assuming /tmp"
+            DESTINATION_URL=/tmp
+          fi
           SCRIPTS_URL=$(echo -n "$SCRIPTS_URL" | sed 's/image:\/\///g' | tr -d '"')
           DESTINATION_URL=$(echo -n "$DESTINATION_URL" | tr -d '"')
+        fi
+        
+        if [ -z "$ASSEMBLE_USER" ]
+        then
+          ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
 
           if [ -z "$ASSEMBLE_USER" ]
           then
-            ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $BUILDER_IMAGE)
+            echo "Unable to determine the USER to build container. Terminating"
+            exit -1
           fi
 
-          ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
-
         fi
+
+        ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 
         builder=$(buildah $BUILDAH_PARAMS from --tls-verify=$TLSVERIFY $BUILDER_IMAGE)
 
@@ -151,6 +162,7 @@ spec:
         fi
 
         # Set run script as CMD
+        echo "Setting CMD $SCRIPTS_URL/run"
         buildah $BUILDAH_PARAMS config --cmd $SCRIPTS_URL/run $builder
 
         # Run assemble script. If there is an assemble script in .s2i/bin directory
