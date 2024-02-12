@@ -90,7 +90,7 @@ if [ -f "$CONTEXT_DIR/.s2i/environment" ]; then
         ENV+="-e $KEY='$VALUE' "
     done < $CONTEXT_DIR/.s2i/environment
 
-    #if ! [ -z "$ENV" ]
+    #if [ ! -z "$ENV" ]
     #then
     #  echo "ENV is $ENV"
     #fi

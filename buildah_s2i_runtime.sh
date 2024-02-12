@@ -21,14 +21,15 @@ TLSVERIFY=${TLSVERITY:-"true"}
 BUILDAH_PARAMS=${BUILDAH_PARAMS:-""}
 SRC_ARTIFACT=${SRC_ARTIFACT:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
+DESTINATION_URL=${DESTINATION_URL:-""}
 
-echo "Creting runtime image from $RUNTIME_IMAGE"
+echo "Creating runtime image from $RUNTIME_IMAGE"
 
 buildah $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
 
-SCRIPTS_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
-IMAGE_DESTINATION_URL=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
-ASSEMBLE_USER=$(buildah inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $RUNTIME_IMAGE)
+SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
+IMAGE_DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
+ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $RUNTIME_IMAGE)
 
 if [ -z "$SCRIPTS_URL" ] || [ -z "$IMAGE_DESTINATION_URL" ]
 then
@@ -61,7 +62,7 @@ fi
 
 ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 
-runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $BUILDER_IMAGE)
+runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
 
 echo "Copy from $SRC_ARTIFACT to $DESTINATION_URL"
 buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $OUTPUT_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL

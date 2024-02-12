@@ -1,0 +1,163 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: buildah-s2i-runtime
+  labels:
+    app.kubernetes.io/version: '0.1'
+spec:
+  description: >-
+    buildah-s2i-runtime task builds and pushes a container
+    image using S2I and a provided runtime image.
+  params:
+    - default: 'true'
+      description: >-
+        Verify the TLS on the registry endpoint (for push/pull to a non-TLS
+        registry)
+      name: TLSVERIFY
+      type: string
+    - description: Location of the repo where image has to be pushed
+      name: OUTPUT_IMAGE
+      type: string
+    - default: 'quay.io/buildah/stable:latest'
+      description: The location of the buildah builder image.
+      name: BUILDAH_IMAGE
+      type: string
+    - default: 'false'
+      description: Skip pushing the built image
+      name: SKIP_PUSH
+      type: string
+    - description: Runtime Image
+      name: RUNTIME_IMAGE
+      type: string
+    - default: "--storage-driver=overlay"
+      description: Parameters to pass to buildah
+      type: string
+      name: BUILDAH_PARAMS
+    - description: Source Artifact to copy
+      name: SRC_ARTIFACT
+      type: string
+    - description: Destination URL where to copy Artifact
+      name: DESTINATION_URL
+      type: string
+    - description: Runtime CMD command
+      name: RUNTIME_CMD
+      type: string
+  results:
+    - description: Url of the image just built.
+      name: IMAGE_URL
+      type: string
+    - description: Digest of the image just built.
+      name: IMAGE_DIGEST
+      type: string
+  steps:
+    - image: $(params.BUILDAH_IMAGE)
+      name: build-and-push
+      resources: {}
+      script: |
+        #!/usr/bin/env bash
+
+        set -eu -o pipefail
+
+        RUNTIME_IMAGE=$(params.RUNTIME_IMAGE)
+        OUTPUT_IMAGE=$(params.OUTPUT_IMAGE)
+        TLSVERIFY=$(params.TLSVERIFY)
+        BUILDAH_PARAMS=$(params.BUILDAH_PARAMS)
+        SRC_ARTIFACT=$(params.SRC_ARTIFACT)
+        RUNTIME_CMD=$(params.RUNTIME_CMD)
+        DESTINATION_URL=$(params.DESTINATION_URL)
+
+        echo "Creating runtime image from $RUNTIME_IMAGE"
+
+        buildah $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
+
+        SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
+        IMAGE_DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
+        ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $RUNTIME_IMAGE)
+
+        if [ -z "$SCRIPTS_URL" ] || [ -z "$IMAGE_DESTINATION_URL" ]
+        then
+          S2I="false"
+          echo "Image not compatible with S2I. Copy raw data"
+          CMD="$RUNTIME_CMD"
+        else
+          S2I="true"
+
+          SCRIPTS_URL=$(echo -n "$SCRIPTS_URL" | sed 's/image:\/\///g' | tr -d '"')
+          DESTINATION_URL=$(echo -n "$IMAGE_DESTINATION_URL" | tr -d '"')
+          DESTINATION_URL="$DESTINATION_URL/src"
+          CMD="$SCRIPTS_URL/run"
+        fi
+        
+        if [ -z "$ASSEMBLE_USER" ]
+        then
+          ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $RUNTIME_IMAGE)
+
+          if [ -z "$ASSEMBLE_USER" ]
+          then
+            echo "Unable to determine the USER to build container. Terminating"
+            exit -1
+          fi
+
+        fi
+
+        ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
+
+        runner=$(buildah $BUILDAH_PARAMS from --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
+
+        echo "Copy from $SRC_ARTIFACT to $DESTINATION_URL"
+        buildah $BUILDAH_PARAMS add --chown $ASSEMBLE_USER:0 --from $OUTPUT_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
+
+        if [ ! -z "$CMD" ]
+        then
+          echo "Setting CMD $CMD"
+          buildah $BUILDAH_PARAMS config --cmd $CMD $runner
+        fi
+
+        if [ "$S2I" = "true" ]
+        then
+          # Run assemble script.
+          ASSEMBLE_SCRIPT="$SCRIPTS_URL/assemble"
+
+          eval buildah $BUILDAH_PARAMS run $runner -- $ASSEMBLE_SCRIPT
+        fi
+
+        echo "Committing image $OUTPUT_IMAGE"
+        buildah $BUILDAH_PARAMS commit $runner $OUTPUT_IMAGE
+
+        echo "Deleting temporary images"
+        buildah $BUILDAH_PARAMS rm $runner
+
+
+        [[ "$(params.SKIP_PUSH)" == "true" ]] && echo "Push skipped" && exit 0
+
+        [[ "$(workspaces.dockerconfig.bound)" == "true" ]] && export DOCKER_CONFIG="$(workspaces.dockerconfig.path)"
+
+        buildah push $BUILDAH_PARAMS --tls-verify=$TLSVERIFY \
+          --digestfile $(workspaces.source.path)/image-digest $OUTPUT_IMAGE \
+          docker://$OUTPUT_IMAGE
+
+        DIGEST=$(cat $(workspaces.source.path)/image-digest)
+        
+        echo -n "$OUTPUT_IMAGE" > $(results.IMAGE_URL.path)
+        echo -n "$DIGEST" > $(results.IMAGE_DIGEST.path)
+
+        echo -n "Successfully built image $OUTPUT_IMAGE@$DIGEST"
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      volumeMounts:
+        - mountPath: /var/lib/containers
+          name: varlibcontainers
+  volumes:
+    - emptyDir: {}
+      name: varlibcontainers
+  workspaces:
+    - name: source
+    - name: artifacts
+    - description: >-
+        An optional workspace that allows providing a .docker/config.json file
+        for Buildah to access the container registry. The file should be placed
+        at the root of the Workspace with name config.json.
+      name: dockerconfig
+      optional: true
