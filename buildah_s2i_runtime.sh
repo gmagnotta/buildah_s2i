@@ -65,7 +65,7 @@ ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 
 runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
 
-echo "Copy from $SRC_ARTIFACT to $DESTINATION_URL"
+echo "Copy from $SOURCE_IMAGE:$SRC_ARTIFACT to $DESTINATION_URL"
 buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $SOURCE_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
 
 # Set run script as CMD
