@@ -33,6 +33,9 @@ spec:
       description: Parameters to pass to buildah
       type: string
       name: BUILDAH_PARAMS
+    - description: Source Image to copy
+      name: SOURCE_IMAGE
+      type: string
     - description: Source Artifact to copy
       name: SRC_ARTIFACT
       type: string
@@ -42,6 +45,7 @@ spec:
     - description: Runtime CMD command
       name: RUNTIME_CMD
       type: string
+      default: ''
   results:
     - description: Url of the image just built.
       name: IMAGE_URL
@@ -65,6 +69,7 @@ spec:
         SRC_ARTIFACT=$(params.SRC_ARTIFACT)
         RUNTIME_CMD=$(params.RUNTIME_CMD)
         DESTINATION_URL=$(params.DESTINATION_URL)
+        SOURCE_IMAGE=$(params.SOURCE_IMAGE)
 
         echo "Creating runtime image from $RUNTIME_IMAGE"
 
@@ -78,7 +83,9 @@ spec:
         then
           S2I="false"
           echo "Image not compatible with S2I. Copy raw data"
+
           CMD="$RUNTIME_CMD"
+
         else
           S2I="true"
 
@@ -86,6 +93,7 @@ spec:
           DESTINATION_URL=$(echo -n "$IMAGE_DESTINATION_URL" | tr -d '"')
           DESTINATION_URL="$DESTINATION_URL/src"
           CMD="$SCRIPTS_URL/run"
+
         fi
         
         if [ -z "$ASSEMBLE_USER" ]
@@ -105,8 +113,9 @@ spec:
         runner=$(buildah $BUILDAH_PARAMS from --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
 
         echo "Copy from $SRC_ARTIFACT to $DESTINATION_URL"
-        buildah $BUILDAH_PARAMS add --chown $ASSEMBLE_USER:0 --from $OUTPUT_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
+        buildah $BUILDAH_PARAMS add --chown $ASSEMBLE_USER:0 --from $SOURCE_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
 
+        # Set run script as CMD
         if [ ! -z "$CMD" ]
         then
           echo "Setting CMD $CMD"
@@ -154,7 +163,6 @@ spec:
       name: varlibcontainers
   workspaces:
     - name: source
-    - name: artifacts
     - description: >-
         An optional workspace that allows providing a .docker/config.json file
         for Buildah to access the container registry. The file should be placed

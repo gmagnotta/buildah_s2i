@@ -22,6 +22,7 @@ BUILDAH_PARAMS=${BUILDAH_PARAMS:-""}
 SRC_ARTIFACT=${SRC_ARTIFACT:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
 DESTINATION_URL=${DESTINATION_URL:-""}
+SOURCE_IMAGE=${SOURCE_IMAGE:-""}
 
 echo "Creating runtime image from $RUNTIME_IMAGE"
 
@@ -65,7 +66,7 @@ ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
 
 echo "Copy from $SRC_ARTIFACT to $DESTINATION_URL"
-buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $OUTPUT_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
+buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $SOURCE_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL
 
 # Set run script as CMD
 if [ ! -z "$CMD" ]
@@ -82,7 +83,7 @@ then
   eval buildah $BUILDAH_PARAMS run $runner -- $ASSEMBLE_SCRIPT
 fi
 
-echo "Committing image"
+echo "Committing image $OUTPUT_IMAGE"
 buildah $BUILDAH_PARAMS commit $runner $OUTPUT_IMAGE
 
 echo "Deleting temporary images"
