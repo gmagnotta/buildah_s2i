@@ -96,8 +96,8 @@ spec:
 
           if [ -z "$ASSEMBLE_USER" ]
           then
-            echo "Unable to determine the USER to build container. Terminating"
-            exit -1
+            echo "WARNING: Unable to determine the USER to build container. Assuming root!"
+            ASSEMBLE_USER="root"
           fi
 
         fi

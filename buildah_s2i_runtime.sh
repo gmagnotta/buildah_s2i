@@ -23,10 +23,11 @@ SRC_ARTIFACT=${SRC_ARTIFACT:-""}
 RUNTIME_CMD=${RUNTIME_CMD:-""}
 DESTINATION_URL=${DESTINATION_URL:-""}
 SOURCE_IMAGE=${SOURCE_IMAGE:-""}
+RUNTIME_IMAGE_ARCH=${RUNTIME_IMAGE_ARCH:-""}
 
 echo "Creating runtime image from $RUNTIME_IMAGE"
 
-buildah $BUILDAH_PARAMS pull --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
+buildah $BUILDAH_PARAMS pull $RUNTIME_IMAGE_ARCH --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
 
 SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
 IMAGE_DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
@@ -55,15 +56,15 @@ then
 
   if [ -z "$ASSEMBLE_USER" ]
   then
-    echo "Unable to determine the USER to build container. Terminating"
-    exit -1
+    echo "WARNING: Unable to determine the USER to build container. Assuming root!"
+    ASSEMBLE_USER="root"
   fi
 
 fi
 
 ASSEMBLE_USER=$(echo -n "$ASSEMBLE_USER" | tr -d '"')
 
-runner=$(buildah $BUILDAH_PARAMS from --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
+runner=$(buildah $BUILDAH_PARAMS from $RUNTIME_IMAGE_ARCH --ulimit nofile=90000:90000 --tls-verify=$TLSVERIFY $RUNTIME_IMAGE)
 
 echo "Copy from $SOURCE_IMAGE:$SRC_ARTIFACT to $DESTINATION_URL"
 buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $SOURCE_IMAGE $runner $SRC_ARTIFACT $DESTINATION_URL

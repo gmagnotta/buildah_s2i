@@ -13,6 +13,7 @@
 # BUILDER_IMAGE -> The builder image to use
 # OUTPUT_IMAGE -> The image that will be build
 # INCREMENTAL -> If incremental build should be used
+# CONTEXT_DIR -> If there is a specific directory containing source
 set -eu -o pipefail
 
 BUILDER_IMAGE=${BUILDER_IMAGE:-""}
@@ -51,8 +52,8 @@ then
 
   if [ -z "$ASSEMBLE_USER" ]
   then
-    echo "Unable to determine the USER to build container. Terminating"
-    exit -1
+    echo "WARNING: Unable to determine the USER to build container. Assuming root!"
+    ASSEMBLE_USER="root"
   fi
 
 fi
