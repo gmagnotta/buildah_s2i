@@ -52,6 +52,9 @@ spec:
     - description: Digest of the image just built.
       name: IMAGE_DIGEST
       type: string
+    - description: Simple Digest of the image just built withouth sha256 prefix
+      name: SIMPLE_DIGEST
+      type: string
   steps:
     - image: $(params.BUILDAH_IMAGE)
       name: build-and-push
@@ -210,6 +213,7 @@ spec:
         
         echo -n "$OUTPUT_IMAGE" > $(results.IMAGE_URL.path)
         echo -n "$DIGEST" > $(results.IMAGE_DIGEST.path)
+        echo -n "$DIGEST" | cut -d ':' -f 2 | tr -d '\n' > $(results.SIMPLE_DIGEST.path)
 
         echo -n "Successfully built image $OUTPUT_IMAGE@$DIGEST"
       securityContext:
