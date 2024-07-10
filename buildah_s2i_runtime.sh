@@ -27,11 +27,22 @@ RUNTIME_IMAGE_ARCH=${RUNTIME_IMAGE_ARCH:-""}
 
 echo "Creating runtime image from $RUNTIME_IMAGE"
 
-buildah $BUILDAH_PARAMS pull $RUNTIME_IMAGE_ARCH --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
+if [ "$RUNTIME_IMAGE" != "scratch" ]; then
 
-SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
-IMAGE_DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
-ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $RUNTIME_IMAGE)
+  buildah $BUILDAH_PARAMS pull $RUNTIME_IMAGE_ARCH --tls-verify=$TLSVERIFY $RUNTIME_IMAGE
+
+  SCRIPTS_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.scripts-url"}}' $RUNTIME_IMAGE)
+  IMAGE_DESTINATION_URL=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.destination"}}' $RUNTIME_IMAGE)
+  ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{index .OCIv1.Config.Labels "io.openshift.s2i.assemble-user"}}' $RUNTIME_IMAGE)
+
+else
+
+  echo "Requested scratch images. Copying only content in an empty container!"
+  SCRIPTS_URL=""
+  IMAGE_DESTINATION_URL=""
+  ASSEMBLE_USER=""
+
+fi
 
 if [ -z "$SCRIPTS_URL" ] || [ -z "$IMAGE_DESTINATION_URL" ]
 then
@@ -52,12 +63,14 @@ fi
 
 if [ -z "$ASSEMBLE_USER" ]
 then
-  ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $RUNTIME_IMAGE)
+  if [ "$RUNTIME_IMAGE" != "scratch" ]; then
+    ASSEMBLE_USER=$(buildah $BUILDAH_PARAMS inspect -f '{{.OCIv1.Config.User}}' $RUNTIME_IMAGE)
+  fi
 
   if [ -z "$ASSEMBLE_USER" ]
   then
     echo "WARNING: Unable to determine the USER to build container. Assuming root!"
-    ASSEMBLE_USER="root"
+    ASSEMBLE_USER="0"
   fi
 
 fi
@@ -73,7 +86,7 @@ buildah $BUILDAH_PARAMS copy --chown $ASSEMBLE_USER:0 --from $SOURCE_IMAGE $runn
 if [ ! -z "$CMD" ]
 then
   echo "Setting CMD $CMD"
-  buildah $BUILDAH_PARAMS config --cmd $CMD $runner
+  eval buildah $BUILDAH_PARAMS config --cmd $CMD $runner
 fi
 
 if [ "$S2I" = "true" ]
